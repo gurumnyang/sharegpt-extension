@@ -7,10 +7,13 @@
     "storage",
     "tabs",
     "scripting",
-    "activeTab"
+    "activeTab",
+    "webRequest"
   ],
   "host_permissions": [
-    "https://sharegpt.gurum.cat/*" 
+    "*://chat.openai.com/*",
+    "*://chatgpt.com/*",
+    "https://sharegpt.gurum.cat/*"
   ],
   "background": {
     "service_worker": "background.js"

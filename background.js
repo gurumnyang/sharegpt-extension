@@ -1,7 +1,7 @@
 // background.js
 
 // 호출 간격 (10초)
-const CHECK_INTERVAL_MS = 10 * 1000;
+const CHECK_INTERVAL_MS = 5 * 1000;
 
 let lastCheckedTime = 0;
 let myAppId = null; // 이 확장 프로그램(이 기기)의 고유 ID
@@ -26,7 +26,11 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete") {
-    handleTabChange(tabId);
+    console.log("[Extension] Tab updated:", tabId, tab.url);
+
+    setInterval(() => {
+      handleTabChange(tabId);
+    }, CHECK_INTERVAL_MS);
   }
 });
 
@@ -44,41 +48,52 @@ async function handleTabChange(tabId) {
     tab.url.includes("chat.openai.com") ||
     tab.url.includes("chatgpt.com")
   ) {
-    const now = Date.now();
-    if (now - lastCheckedTime >= CHECK_INTERVAL_MS) {
-      lastCheckedTime = now;
+    chrome.windows.get(tab.windowId, async (windowInfo) => {
+      const now = Date.now();
+      if (now - lastCheckedTime >= CHECK_INTERVAL_MS) {
+        lastCheckedTime = now;
 
-      // appId가 없으면 불러오기
-      if (!myAppId) {
-        myAppId = await getAppIdFromStorage();
-      }
+        // appId가 없으면 불러오기
+        if (!myAppId) {
+          myAppId = await getAppIdFromStorage();
+        }
 
-      // /api/view POST
-      try {
-        const data = await fetchViewStatus(myAppId);
-        console.log("[Extension] /api/view response:", data);
+        // /api/view POST
+        try {
+          const data = await fetchViewStatus(myAppId);
+          console.log("[Extension] /api/view response:", data);
 
-        // Content Script로 전달
-        chrome.tabs.sendMessage(tabId, {
-          type: "VIEW_STATUS",
-          payload: {
-            ...data,
-            myAppId
+          // Content Script로 전달
+          let message = {
+            type: "VIEW_STATUS",
+            payload: {
+              ...data,
+              myAppId
+            }
           }
-        });
-      } catch (err) {
-        console.error("[Extension] Failed to fetch /api/view:", err);
+          chrome.tabs.sendMessage(tabId, message, (response) => {
+            if (chrome.runtime.lastError) {
+              console.warn("[Extension] 메시지 전달 실패 (content script 없음)", chrome.runtime.lastError.message);
+            } else {
+              console.log("[Extension] 메시지 전달 성공", response);
+            }
+          });
+        
+        } catch (err) {
+          console.error("[Extension] Failed to fetch /api/view:", err);
+        }
       }
-    }
+    });
   }
 }
+
 
 /**
  * @function fetchViewStatus
  * @param {String} appId
  */
 async function fetchViewStatus(appId) {
-  const res = await fetch("https://sharegpt.gurum.cat/api/view", {
+  const res = await fetch("http://sharegpt.gurum.cat/api/view", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -114,23 +129,25 @@ function generateUUID() {
   });
 }
 
-/* ------------------------------------------------------------------
-   메시지 전송 감지 → /api/activity 호출 로직
-   content script가 메시지를 보낸 경우 처리
------------------------------------------------------------------- */
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "CHATGPT_MESSAGE_SENT") {
-    // 메시지 전송 이벤트 감지됨
-    reportActivityToServer()
-      .then(() => {
-        console.log("[Extension] Logged usage to /api/activity");
-      })
-      .catch((err) => {
-        console.error("[Extension] Failed to log usage:", err);
-      });
-  }
-  return true; // 비동기 응답 가능
-});
+  chrome.webRequest.onCompleted.addListener(
+    (details) => {
+      console.log("[webRequest] 감지된 conversation 요청:", details.url);
+      // 요청이 완료되었음을 감지하면, 메시지 전송 이벤트로 로그 기록하도록 알림
+      reportActivityToServer()
+        .then(() => {
+          console.log("[Extension] Logged usage to /api/activity");
+        })
+        .catch((err) => {
+          console.error("[Extension] Failed to log usage:", err);
+        });
+    },
+    {
+      urls: [
+        "*://chat.openai.com/backend-api/conversation",
+        "*://chatgpt.com/backend-api/conversation"
+      ]
+    }
+  );
 
 /**
  * @function reportActivityToServer
@@ -141,7 +158,7 @@ async function reportActivityToServer() {
     myAppId = await getAppIdFromStorage();
   }
 
-  const res = await fetch("https://sharegpt.gurum.cat/api/activity", {
+  const res = await fetch("http://sharegpt.gurum.cat/api/activity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

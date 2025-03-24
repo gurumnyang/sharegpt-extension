@@ -5,7 +5,10 @@
 // --------------------------------------------------
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "VIEW_STATUS") {
+    console.log("[Content] /api/view response:", message.payload);
     handleViewStatus(message.payload);
+    sendResponse({ status: "success" });
+
   }
 });
 
@@ -22,7 +25,7 @@ function handleViewStatus(payload) {
   // 나의 appId 제외
   const otherDevices = devices.filter((d) => d.app_id !== myAppId);
 
-  // 최근 10분 내(600초 이내) 사용 필터
+  // 최근 10분 내(600초 이내) 사용 필터otherDevices
   const now = Date.now();
   const TEN_MIN = 10 * 60 * 1000;
   const recentOthers = otherDevices.filter((dev) => {
@@ -40,13 +43,24 @@ function handleViewStatus(payload) {
 
   // 가장 최근 사용 시각 모달 표시
   const lastUsed = getMostRecent(recentOthers);
+
+  const time = new Date().toLocaleTimeString();
+  //HH:MM:SS 형식으로 시간을 표시
+  const time2 = new Date().toLocaleTimeString("ko-KR", {
+    hour12: false,
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  });
+
   if (lastUsed) {
     const diffMs = now - new Date(lastUsed.timestamp).getTime();
     const diffMin = Math.floor(diffMs / 1000 / 60);
-    showNotification(`가장 최근 사용은 ${diffMin}분 전`);
+    const diffSec = Math.floor(diffMs / 1000);
+    showNotification(`${diffSec}초 전에 다른 ${recentOthers.length}개의 기기에서 사용됨`);
   } else {
-    showNotification("최근 10분 내 다른 사용자 없음");
-  }
+    showNotification(`최근 10분 내 사용된 적 없음. (${time2})`);
+  
 }
 
 /**
@@ -108,7 +122,7 @@ function showNotification(msg) {
     });
     document.body.appendChild(box);
   }
-  box.textContent = msg;
+  box.innerHTML = msg;
 }
 
 function removeNotification() {
@@ -118,23 +132,3 @@ function removeNotification() {
   }
 }
 
-// --------------------------------------------------
-// 2) 사용자 메시지 전송 감지
-//    => /backend-api/conversation 을 호출 시 background에 알림
-// --------------------------------------------------
-(function interceptFetchForChat() {
-  const originalFetch = window.fetch;
-
-  window.fetch = async function (...args) {
-    const [url] = args;
-
-    // URL이 문자열이고, "/backend-api/conversation" 포함 시
-    if (typeof url === "string" && url.includes("/backend-api/conversation")) {
-      // background에 전송 - 메시지가 전송됐음을 알림
-      chrome.runtime.sendMessage({ type: "CHATGPT_MESSAGE_SENT" });
-    }
-
-    // 원래 fetch 진행
-    return originalFetch.apply(this, args);
-  };
-})();
