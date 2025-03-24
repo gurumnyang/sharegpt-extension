@@ -94,7 +94,7 @@ function showNotification(msg) {
     box.id = "my-extension-noti";
     Object.assign(box.style, {
       position: "fixed",
-      top: "10px",
+      bottom: "10px",
       right: "10px",
       zIndex: 9999,
       background: "#fffbe8",
@@ -102,6 +102,7 @@ function showNotification(msg) {
       padding: "10px",
       borderRadius: "6px",
       fontSize: "14px",
+      color: "black",
       maxWidth: "250px",
       boxShadow: "0 2px 6px rgba(0,0,0,0.2)"
     });
