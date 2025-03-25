@@ -60,6 +60,7 @@ function handleViewStatus(payload) {
     showNotification(`${diffSec}초 전에 다른 ${recentOthers.length}개의 기기에서 사용됨`);
   } else {
     showNotification(`최근 10분 내 사용된 적 없음. (${time2})`);
+  }
   
 }
 
