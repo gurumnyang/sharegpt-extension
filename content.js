@@ -57,9 +57,9 @@ function handleViewStatus(payload) {
     const diffMs = now - new Date(lastUsed.timestamp).getTime();
     const diffMin = Math.floor(diffMs / 1000 / 60);
     const diffSec = Math.floor(diffMs / 1000);
-    showNotification(`${diffSec}초 전에 다른 ${recentOthers.length}개의 기기에서 사용됨`);
+    showNotification(`${diffSec}초 전에 다른 ${recentOthers.length}개의 기기에서 사용됨`, "#ff8888");
   } else {
-    showNotification(`최근 10분 내 사용된 적 없음. (${time2})`);
+    showNotification(`최근 10분 내 다른 기기에서 사용된 적 없음. (${time2})`, "#d6ffd1");
   }
   
 }
@@ -102,7 +102,7 @@ function unblockChatInput() {
 /**
  * 간단한 화면 우상단 알림 박스
  */
-function showNotification(msg) {
+function showNotification(msg, bgColor = "#fffbe8") {
   let box = document.getElementById("my-extension-noti");
   if (!box) {
     box = document.createElement("div");
@@ -112,7 +112,7 @@ function showNotification(msg) {
       bottom: "10px",
       right: "10px",
       zIndex: 9999,
-      background: "#fffbe8",
+      background: bgColor,
       border: "1px solid #ccc",
       padding: "10px",
       borderRadius: "6px",
