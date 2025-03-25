@@ -19,18 +19,33 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
+let lastTabId = null;
+
+setInterval(() => {
+  console.log("24행 감지")
+  if (lastTabId) {
+    handleTabChange(lastTabId);
+  }
+}, CHECK_INTERVAL_MS);
+
 // 탭 활성화/URL 변경 시 → checkAndFetchViewStatus
 chrome.tabs.onActivated.addListener((activeInfo) => {
+  console.log("24행 감지")
+  const tab = chrome.tabs.get(activeInfo.tabId, (tab) => {
+    if(tab.url.includes("chat.openai.com") || tab.url.includes("chatgpt.com")) {
+      console.log("[Extension] Tab activated:", activeInfo.tabId);
+      lastTabId = activeInfo.tabId;
+      handleTabChange(activeInfo.tabId);
+    }
+  });
   handleTabChange(activeInfo.tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete") {
+  if (changeInfo.status === "complete"  && tab.url && (tab.url.includes("chat.openai.com") || tab.url.includes("chatgpt.com"))) {
     console.log("[Extension] Tab updated:", tabId, tab.url);
-
-    setInterval(() => {
-      handleTabChange(tabId);
-    }, CHECK_INTERVAL_MS);
+    lastTabId = tabId;
+    handleTabChange(tabId);
   }
 });
 
@@ -40,6 +55,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
  *   → 응답을 content script에 전달
  */
 async function handleTabChange(tabId) {
+  if(!tabId) return;
   const tab = await chrome.tabs.get(tabId);
   if (!tab || !tab.url) return;
 
@@ -48,6 +64,8 @@ async function handleTabChange(tabId) {
     tab.url.includes("chat.openai.com") ||
     tab.url.includes("chatgpt.com")
   ) {
+    try {
+      
     chrome.windows.get(tab.windowId, async (windowInfo) => {
       const now = Date.now();
       if (now - lastCheckedTime >= CHECK_INTERVAL_MS) {
@@ -84,6 +102,9 @@ async function handleTabChange(tabId) {
         }
       }
     });
+    } catch (err) {
+      console.log(err);
+    }
   }
 }
 
