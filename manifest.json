@@ -1,6 +1,6 @@
 {
   "name": "ChatGPT 공유 도구",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "manifest_version": 3,
   "description": "ChatGPT 이용 여부 확인 및 중복 사용 방지 (chat.openai.com, chatgpt.com)",
   "permissions": [
