@@ -119,7 +119,9 @@ function showNotification(msg, bgColor = "#fffbe8") {
       fontSize: "14px",
       color: "black",
       maxWidth: "250px",
-      boxShadow: "0 2px 6px rgba(0,0,0,0.2)"
+      boxShadow: "0 2px 6px rgba(0,0,0,0.2)",
+      opacity: 0.7, // 반투명도 설정
+      pointerEvents: "none" // 박스 아래의 요소를 클릭할 수 있게 설정
     });
     document.body.appendChild(box);
   }
