@@ -45,7 +45,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete"  && tab.url && (tab.url.includes("chat.openai.com") || tab.url.includes("chatgpt.com"))) {
     console.log("[Extension] Tab updated:", tabId, tab.url);
     lastTabId = tabId;
-    handleTabChange(tabId);
+
+    chrome.tabs.sendMessage(tabId, { type: "REFRESH" }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn("[Extension] 메시지 전달 실패 (content script 없음)", chrome.runtime.lastError.message);
+      } else {
+        console.log("[Extension] REFRESH 메시지 전달 성공", response);
+      }
+    });
+
+    handleTabChange(tabId, true);
   }
 });
 
@@ -54,7 +63,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
  * - 활성 탭이 chat.openai.com 또는 chatgpt.com이면 10초 간격으로 /api/view 호출
  *   → 응답을 content script에 전달
  */
-async function handleTabChange(tabId) {
+async function handleTabChange(tabId, ignoreInterval = false) {
   if(!tabId) return;
   const tab = await chrome.tabs.get(tabId);
   if (!tab || !tab.url) return;
@@ -65,43 +74,42 @@ async function handleTabChange(tabId) {
     tab.url.includes("chatgpt.com")
   ) {
     try {
-      
-    chrome.windows.get(tab.windowId, async (windowInfo) => {
-      const now = Date.now();
-      if (now - lastCheckedTime >= CHECK_INTERVAL_MS) {
-        lastCheckedTime = now;
+      chrome.windows.get(tab.windowId, async (windowInfo) => {
+        const now = Date.now();
+        if (now - lastCheckedTime >= CHECK_INTERVAL_MS || ignoreInterval) {
+          lastCheckedTime = now;
 
-        // appId가 없으면 불러오기
-        if (!myAppId) {
-          myAppId = await getAppIdFromStorage();
-        }
-
-        // /api/view POST
-        try {
-          const data = await fetchViewStatus(myAppId);
-          console.log("[Extension] /api/view response:", data);
-
-          // Content Script로 전달
-          let message = {
-            type: "VIEW_STATUS",
-            payload: {
-              ...data,
-              myAppId
-            }
+          // appId가 없으면 불러오기
+          if (!myAppId) {
+            myAppId = await getAppIdFromStorage();
           }
-          chrome.tabs.sendMessage(tabId, message, (response) => {
-            if (chrome.runtime.lastError) {
-              console.warn("[Extension] 메시지 전달 실패 (content script 없음)", chrome.runtime.lastError.message);
-            } else {
-              console.log("[Extension] 메시지 전달 성공", response);
+
+          // /api/view POST
+          try {
+            const data = await fetchViewStatus(myAppId);
+            console.log("[Extension] /api/view response:", data);
+
+            // Content Script로 전달
+            let message = {
+              type: "VIEW_STATUS",
+              payload: {
+                ...data,
+                myAppId
+              }
             }
-          });
-        
-        } catch (err) {
-          console.error("[Extension] Failed to fetch /api/view:", err);
+            chrome.tabs.sendMessage(tabId, message, (response) => {
+              if (chrome.runtime.lastError) {
+                console.warn("[Extension] 메시지 전달 실패 (content script 없음)", chrome.runtime.lastError.message);
+              } else {
+                console.log("[Extension] 메시지 전달 성공", response);
+              }
+            });
+
+          } catch (err) {
+            console.error("[Extension] Failed to fetch /api/view:", err);
+          }
         }
-      }
-    });
+      });
     } catch (err) {
       console.log(err);
     }
@@ -114,7 +122,7 @@ async function handleTabChange(tabId) {
  * @param {String} appId
  */
 async function fetchViewStatus(appId) {
-  const res = await fetch("http://sharegpt.gurum.cat/api/view", {
+  const res = await fetch("https://sharegpt.gurum.cat/api/view", {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -179,7 +187,7 @@ async function reportActivityToServer() {
     myAppId = await getAppIdFromStorage();
   }
 
-  const res = await fetch("http://sharegpt.gurum.cat/api/activity", {
+  const res = await fetch("https://sharegpt.gurum.cat/api/activity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
