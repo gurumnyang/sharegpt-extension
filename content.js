@@ -122,7 +122,8 @@ function createChatRoomUI() {
     Object.assign(messageArea.style, {
       flex: '1',
       padding: '10px',
-      overflowY: 'auto'
+      overflowY: 'auto',
+      pointerEvents: "none" 
     });
 
     // 입력 영역
