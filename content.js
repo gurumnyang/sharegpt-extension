@@ -113,7 +113,8 @@ function createChatRoomUI() {
       zIndex: 10000,
       display: 'flex',
       flexDirection: 'column',
-      fontSize: '14px'
+      fontSize: '14px',
+      pointerEvents: "none" 
     });
 
     // 메시지 표시 영역
