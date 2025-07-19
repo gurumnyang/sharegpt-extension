@@ -173,7 +173,9 @@ function generateUUID() {
     {
       urls: [
         "*://chat.openai.com/backend-api/conversation",
-        "*://chatgpt.com/backend-api/conversation"
+        "*://chatgpt.com/backend-api/conversation",
+        "*://chatgpt.com/backend-api/f/conversation",
+        "*://chatgpt.com/backend-anon/f/conversation",
       ]
     }
   );
