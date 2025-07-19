@@ -113,7 +113,8 @@ function createChatRoomUI() {
       zIndex: 10000,
       display: 'flex',
       flexDirection: 'column',
-      fontSize: '14px'
+      fontSize: '14px',
+      pointerEvents: "none" 
     });
 
     // 메시지 표시 영역
@@ -122,7 +123,8 @@ function createChatRoomUI() {
     Object.assign(messageArea.style, {
       flex: '1',
       padding: '10px',
-      overflowY: 'auto'
+      overflowY: 'auto',
+      pointerEvents: "none" 
     });
 
     // 입력 영역
@@ -130,7 +132,8 @@ function createChatRoomUI() {
     inputContainer.id = 'chat-input-container';
     Object.assign(inputContainer.style, {
       display: 'flex',
-      borderTop: '1px solid #000'
+      borderTop: '1px solid #000',
+      pointerEvents: "all"
     });
 
     const inputField = document.createElement('input');
@@ -145,7 +148,7 @@ function createChatRoomUI() {
       backgroundColor: 'rgba(255, 255, 255, 0)',
       color: '#000',
       opacity: '1',
-      placeholderColor: 'black',
+      placeholderColor: 'black'
     });
 
 
