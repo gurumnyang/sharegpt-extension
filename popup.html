@@ -6,24 +6,23 @@
     <title>프록시 설정</title>
     <style>
       :root {
-        --bg: #0f172a;
-        --bg-2: #111827;
-        --card: #0b1220;
-        --text: #e5e7eb;
-        --muted: #9ca3af;
-        --primary: #22c55e;
-        --primary-600: #16a34a;
-        --danger: #ef4444;
-        --ring: #60a5fa;
-        --input: #0b1426;
-        --border: #1f2937;
+        /* ChatGPT current dark theme (flat): bg: #212121, sidebar/card: #181818 */
+        --bg: #212121;        /* page background */
+        --card: #181818;      /* card/sidebar surface */
+        --text: #E0E0E0;      /* primary text */
+        --muted: #A0A0A0;     /* secondary text */
+        --primary: #10A37F;   /* accent */
+        --danger: #EF4444;    /* error */
+        --ring: #10A37F;      /* focus ring */
+        --input: #1F1F1F;     /* input/button surface */
+        --border: #2A2A2A;    /* outlines */
         --shadow: 0 10px 25px rgba(0,0,0,0.35);
       }
       html, body { margin: 0; padding: 0; }
       body {
         font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Apple SD Gothic Neo, Malgun Gothic, "Apple Color Emoji", "Segoe UI Emoji";
         color: var(--text);
-        background: linear-gradient(135deg, #0f172a 0%, #0b1220 60%, #0c1a33 100%);
+        background: var(--bg);
         min-width: 416px;
       }
       .wrap { padding: 12px; }
@@ -36,17 +35,18 @@
       }
       .card__head {
         padding: 12px 14px;
-        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0));
+        background: transparent;
         display: flex;
         align-items: center;
         justify-content: space-between;
+        border-bottom: 1px solid var(--border);
       }
       .title { font-weight: 700; }
       .badge {
         font-size: 12px; padding: 4px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted);
       }
-      .badge.on { color: #16a34a; border-color: #14532d; background: rgba(22,163,74,0.08); }
-      .badge.off { color: #ef4444; border-color: #7f1d1d; background: rgba(239,68,68,0.08); }
+      .badge.on { color: var(--primary); border-color: #2A6D5D; background: rgba(16,163,127,0.12); }
+      .badge.off { color: var(--danger); border-color: #6b1f1f; background: rgba(239,68,68,0.12); }
       .card__body { padding: 12px 14px 14px; }
       .row { display: flex; gap: 10px; margin-bottom: 10px; }
       .field { flex: 1; }
@@ -58,11 +58,11 @@
       }
       input:focus { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(96,165,250,.25); }
       .actions { display: flex; gap: 8px; margin-top: 12px; }
-      button { flex: 1; padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); color: var(--text); background: #0e1526; transition: transform .05s ease, background .2s ease, border-color .2s ease; }
-      button:hover { background: #0f1a2e; border-color: #243449; }
+      button { flex: 1; padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); color: var(--text); background: var(--input); transition: transform .05s ease, background .2s ease, border-color .2s ease; }
+      button:hover { background: #4b4d5a; border-color: #6a6c78; }
       button:active { transform: translateY(1px); }
-      .btn--primary { background: linear-gradient(180deg, #22c55e, #16a34a); border: none; }
-      .btn--primary:hover { filter: brightness(1.05); }
+      .btn--primary { background: var(--primary); border: none; color: #0b0e12; }
+      .btn--primary:hover { filter: brightness(1.03); }
       .btn--ghost { background: transparent; }
       .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
       .targets { font-size: 12px; color: var(--muted); margin-top: 8px; }
@@ -117,7 +117,7 @@
           </div>
           <div style="height:8px"></div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px">최근 이벤트</div>
-          <div id="diag-log" style="max-height:140px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--border);border-radius:8px;padding:8px;background:#0a1220;width:100%;max-width:100%;box-sizing:border-box;word-break:break-word;overflow-wrap:anywhere;white-space:normal"></div>
+          <div id="diag-log" style="max-height:140px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--input);width:100%;max-width:100%;box-sizing:border-box;word-break:break-word;overflow-wrap:anywhere;white-space:normal"></div>
         </div>
       </div>
     </div>
