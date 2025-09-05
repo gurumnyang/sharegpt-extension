@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>프록시 설정</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --bg-2: #111827;
+        --card: #0b1220;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --primary: #22c55e;
+        --primary-600: #16a34a;
+        --danger: #ef4444;
+        --ring: #60a5fa;
+        --input: #0b1426;
+        --border: #1f2937;
+        --shadow: 0 10px 25px rgba(0,0,0,0.35);
+      }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Apple SD Gothic Neo, Malgun Gothic, "Apple Color Emoji", "Segoe UI Emoji";
+        color: var(--text);
+        background: linear-gradient(135deg, #0f172a 0%, #0b1220 60%, #0c1a33 100%);
+        min-width: 416px;
+      }
+      .wrap { padding: 12px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .card__head {
+        padding: 12px 14px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0));
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .title { font-weight: 700; }
+      .badge {
+        font-size: 12px; padding: 4px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted);
+      }
+      .badge.on { color: #16a34a; border-color: #14532d; background: rgba(22,163,74,0.08); }
+      .badge.off { color: #ef4444; border-color: #7f1d1d; background: rgba(239,68,68,0.08); }
+      .card__body { padding: 12px 14px 14px; }
+      .row { display: flex; gap: 10px; margin-bottom: 10px; }
+      .field { flex: 1; }
+      label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+      input {
+        width: 100%; padding: 10px 12px; box-sizing: border-box; color: var(--text);
+        background: var(--input); border: 1px solid var(--border); border-radius: 10px;
+        outline: none; transition: border-color .15s ease, box-shadow .15s ease;
+      }
+      input:focus { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(96,165,250,.25); }
+      .actions { display: flex; gap: 8px; margin-top: 12px; }
+      button { flex: 1; padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); color: var(--text); background: #0e1526; transition: transform .05s ease, background .2s ease, border-color .2s ease; }
+      button:hover { background: #0f1a2e; border-color: #243449; }
+      button:active { transform: translateY(1px); }
+      .btn--primary { background: linear-gradient(180deg, #22c55e, #16a34a); border: none; }
+      .btn--primary:hover { filter: brightness(1.05); }
+      .btn--ghost { background: transparent; }
+      .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+      .targets { font-size: 12px; color: var(--muted); margin-top: 8px; }
+      .status { margin-top: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="card__head">
+          <div class="title">프록시 설정</div>
+          <div id="status" class="badge off">프록시 비활성화</div>
+        </div>
+        <div class="card__body">
+          <div class="row">
+            <div class="field" style="flex:2">
+              <label for="proxyHost">프록시 호스트</label>
+              <input id="proxyHost" type="text" placeholder="예: proxy.example.com" />
+            </div>
+            <div class="field" style="flex:1">
+              <label for="proxyPort">포트</label>
+              <input id="proxyPort" type="number" min="1" max="65535" placeholder="8080" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="proxyUsername">아이디</label>
+              <input id="proxyUsername" type="text" placeholder="username" />
+            </div>
+            <div class="field">
+              <label for="proxyPassword">비밀번호</label>
+              <input id="proxyPassword" type="password" placeholder="password" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="saveBtn" class="btn--ghost">저장</button>
+            <button id="enableBtn" class="btn--primary">활성화</button>
+            <button id="disableBtn">비활성화</button>
+          </div>
+
+          <div class="targets">대상: chatgpt.com, chat.openai.com, www.myip.com</div>
+
+          <div style="height:10px"></div>
+          <div class="title" style="font-size:14px;margin-bottom:6px">진단</div>
+          <div id="diag-summary" style="font-size:12px;color:var(--muted);line-height:1.7;word-break:break-word;overflow-wrap:anywhere;white-space:normal"></div>
+          <div class="actions" style="margin-top:8px">
+            <button id="refreshDiag">새로고침</button>
+            <button id="resetDiag" class="btn--ghost">통계 초기화</button>
+            <button id="openMyIp" class="btn--ghost">www.myip.com 열기</button>
+          </div>
+          <div style="height:8px"></div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">최근 이벤트</div>
+          <div id="diag-log" style="max-height:140px;overflow-y:auto;overflow-x:hidden;border:1px solid var(--border);border-radius:8px;padding:8px;background:#0a1220;width:100%;max-width:100%;box-sizing:border-box;word-break:break-word;overflow-wrap:anywhere;white-space:normal"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+  </html>

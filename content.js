@@ -35,24 +35,16 @@ function handleViewStatus(payload) {
     return now - t <= TEN_MIN;
   });
 
-  // 현재 시각(시:분:초)
-  const time2 = new Date().toLocaleTimeString("ko-KR", {
-    hour12: false,
-    hour: "numeric",
-    minute: "numeric",
-    second: "numeric",
-  });
-
   // 최근 10분 내 다른 기기가 있다면, 그 중 가장 최근을 찾아 placeholder에 표시
   if (recentOthers.length > 0) {
     const lastUsed = getMostRecent(recentOthers);
     if (lastUsed) {
       const diffMs = now - new Date(lastUsed.timestamp).getTime();
       const diffSec = Math.floor(diffMs / 1000);
-      changePlaceHolderMessage(`${diffSec}초 전에 다른 ${recentOthers.length}개의 기기에서 사용됨`);
+      appendProxyStatus(`${diffSec}초 전 다른 ${recentOthers.length}개 기기에서 사용됨.`);
     }
   } else {
-    changePlaceHolderMessage(`최근 10분 내 다른 기기에서 사용된 적 없음. (${time2})`);
+    appendProxyStatus(`최근 10분 내 접속자 없음.`);
   }
 }
 
@@ -83,6 +75,22 @@ function changePlaceHolderMessage(message) {
     }
   `;
   document.head.appendChild(style);
+}
+
+/**
+ * @function appendProxyStatus
+ * - chrome.storage.local의 proxyEnabled 상태를 읽어 문구를 보강 후 placeholder 적용
+ */
+function appendProxyStatus(base) {
+  try {
+    chrome.storage.local.get(["proxyEnabled"], (res) => {
+      const suffix = res && res.proxyEnabled ? " 프록시 켜짐" : " 프록시를 활성화해주세요!";
+      changePlaceHolderMessage(`${base}${suffix}`);
+    });
+  } catch (e) {
+    // storage 접근 실패 시 기본 문구만 표시
+    changePlaceHolderMessage(base);
+  }
 }
 
 
