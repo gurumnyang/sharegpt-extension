@@ -1,5 +1,29 @@
 // content.js
 
+(function injectFetchHook() {
+  const FLAG = 'sharegptFetchHookInjected';
+  if (window[FLAG]) return;
+  window[FLAG] = true;
+  try {
+    const marker = 'data-sharegpt-fetch-hook';
+    const root = document.documentElement;
+    if (root && root.getAttribute(marker) === '1') return;
+    if (root) root.setAttribute(marker, '1');
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('fetch-hook.js');
+    script.async = false;
+    script.onload = () => {
+      script.remove();
+    };
+    script.onerror = (err) => {
+      console.warn('[Content] Failed to inject fetch hook', err);
+    };
+    (document.head || document.documentElement).appendChild(script);
+  } catch (err) {
+    console.warn('[Content] injectFetchHook error', err);
+  }
+})();
+
 /****************************************************
  * 1) /api/view 응답 처리: 최근 10분 이내 사용 상태를
  *    textarea placeholder에만 표시
