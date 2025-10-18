@@ -8,14 +8,16 @@
     "tabs",
     "webRequest",
     "webRequestAuthProvider",
-    "proxy"
+    "proxy",
+    "browsingData"
   ],
   "host_permissions": [
     "*://chat.openai.com/*",
     "*://chatgpt.com/*",
     "*://*.chatgpt.com/*",
     "https://sharegpt.gurum.cat/*",
-    "*://www.myip.com/*"
+    "*://www.myip.com/*",
+    "https://api.myip.com/*"
   ],
   "background": {
     "service_worker": "background.js"

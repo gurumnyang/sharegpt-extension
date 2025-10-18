@@ -1,14 +1,26 @@
 // popup.js
 
+const EXPECTED_IP = '211.108.115.121';
+const ALERT_PRIORITY = { error: 3, warn: 2, info: 1 };
+const ALERT_CLASS = { error: 'alert--error', warn: 'alert--warn', info: 'alert--info' };
+const INPUT_ALERT_COLOR = { error: '#fca5a5', warn: '#fcd34d', info: '#93c5fd' };
+
+const alerts = { user: null, ip: null };
+let statusOverride = null; // { text, isError }
+
 const els = {
   host: document.getElementById('proxyHost'),
   port: document.getElementById('proxyPort'),
   user: document.getElementById('proxyUsername'),
   pass: document.getElementById('proxyPassword'),
-  saveBtn: document.getElementById('saveBtn'),
-  enableBtn: document.getElementById('enableBtn'),
-  disableBtn: document.getElementById('disableBtn'),
+  toggle: document.getElementById('proxyToggle'),
+  toggleText: document.getElementById('toggleText'),
+  applyBtn: document.getElementById('applyBtn'),
   status: document.getElementById('status'),
+  alertBanner: document.getElementById('alertBanner'),
+  inputAlert: document.getElementById('inputAlert'),
+  ipValue: document.getElementById('ipValue'),
+  refreshIp: document.getElementById('refreshIp'),
   diagSummary: document.getElementById('diag-summary'),
   diagLog: document.getElementById('diag-log'),
   refreshDiag: document.getElementById('refreshDiag'),
@@ -19,27 +31,31 @@ const els = {
 init();
 
 function init() {
+  els.applyBtn?.addEventListener('click', onApply);
+  els.toggle?.addEventListener('change', onToggle);
+  els.refreshIp?.addEventListener('click', refreshIpInfo);
+  els.refreshDiag?.addEventListener('click', requestDiag);
+  els.resetDiag?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'RESET_PROXY_STATS' }, () => requestDiag());
+  });
+  els.openMyIp?.addEventListener('click', () => chrome.tabs.create({ url: 'https://www.myip.com/' }));
+
   chrome.storage.local.get(
-    [
-      'proxyHost', 'proxyPort',
-      'proxyUsername', 'proxyPassword', 'proxyEnabled'
-    ],
+    ['proxyHost', 'proxyPort', 'proxyUsername', 'proxyPassword', 'proxyEnabled'],
     (cfg) => {
       els.host.value = cfg.proxyHost || '';
       els.port.value = cfg.proxyPort || '';
       els.user.value = cfg.proxyUsername || '';
       els.pass.value = cfg.proxyPassword || '';
-      updateStatus(Boolean(cfg.proxyEnabled));
+      const enabled = Boolean(cfg.proxyEnabled);
+      updateStatus(enabled);
+      updateToggleText(enabled);
+      renderAlerts();
       requestDiag();
     }
   );
 
-  els.saveBtn.addEventListener('click', onSave);
-  els.enableBtn.addEventListener('click', onEnable);
-  els.disableBtn.addEventListener('click', onDisable);
-  els.refreshDiag?.addEventListener('click', requestDiag);
-  els.resetDiag?.addEventListener('click', resetDiag);
-  els.openMyIp?.addEventListener('click', () => chrome.tabs.create({ url: 'https://www.myip.com/' }));
+  refreshIpInfo();
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.proxyDiagnostics) {
@@ -49,55 +65,199 @@ function init() {
   });
 }
 
-function onSave() {
+function onApply() {
   const cfg = collect();
-  console.log('[Popup] Save proxy config', maskCfg(cfg));
-  chrome.storage.local.set(cfg, () => {
-    updateStatus(false);
-  });
-}
+  const enabled = Boolean(els.toggle?.checked);
+  setUserAlert(null);
 
-function onEnable() {
-  const cfg = collect();
-  console.log('[Popup] Enable proxy with config', maskCfg(cfg));
-  chrome.storage.local.set({ ...cfg, proxyEnabled: true }, () => {
-    chrome.runtime.sendMessage({ type: 'APPLY_PROXY' }, (res) => {
-      updateStatus(true);
+  if (enabled) {
+    if (!cfg.proxyHost) {
+      setUserAlert('프록시 호스트를 입력해주세요.', 'error');
+      return;
+    }
+    const port = parseInt(cfg.proxyPort, 10);
+    if (!port || port <= 0 || port > 65535) {
+      setUserAlert('1~65535 범위의 올바른 포트를 입력해주세요.', 'error');
+      return;
+    }
+  }
+
+  const payload = { ...cfg, proxyEnabled: enabled };
+  console.log('[Popup] Apply proxy config', maskCfg(payload));
+
+  toggleApplyButton(true);
+  chrome.storage.local.set(payload, () => {
+    if (chrome.runtime.lastError) {
+      setUserAlert(`설정 저장 실패: ${chrome.runtime.lastError.message}`, 'error');
+      toggleApplyButton(false);
+      return;
+    }
+
+    const messageType = enabled ? 'APPLY_PROXY' : 'DISABLE_PROXY';
+    chrome.runtime.sendMessage({ type: messageType }, () => {
+      if (chrome.runtime.lastError) {
+        setUserAlert(`백그라운드 통신 실패: ${chrome.runtime.lastError.message}`, 'error');
+      } else {
+        setUserAlert(`설정을 적용했습니다. (${enabled ? '프록시 활성화' : '프록시 비활성화'})`, 'info');
+      }
+      updateStatus(enabled);
+      requestDiag();
+      toggleApplyButton(false);
+      if (enabled) verifyProxyNow();
     });
   });
 }
 
-function onDisable() {
-  console.log('[Popup] Disable proxy');
-  chrome.storage.local.set({ proxyEnabled: false }, () => {
-    chrome.runtime.sendMessage({ type: 'DISABLE_PROXY' }, (res) => {
-      updateStatus(false);
+function onToggle() {
+  const enabled = Boolean(els.toggle?.checked);
+  updateToggleText(enabled);
+  setUserAlert(null);
+  if (enabled) {
+    // When enabling, persist the toggle state and apply immediately.
+    chrome.storage.local.get(['proxyHost', 'proxyPort', 'proxyUsername', 'proxyPassword'], (cfg) => {
+      els.host.value = cfg.proxyHost || els.host.value;
+      els.port.value = cfg.proxyPort || els.port.value;
+      els.user.value = cfg.proxyUsername || els.user.value;
+      els.pass.value = cfg.proxyPassword || els.pass.value;
+      onApply();
     });
-  });
+  } else {
+    chrome.storage.local.set({ proxyEnabled: false }, () => {
+      chrome.runtime.sendMessage({ type: 'DISABLE_PROXY' }, () => {
+        if (chrome.runtime.lastError) {
+          setUserAlert(`프록시 비활성화 실패: ${chrome.runtime.lastError.message}`, 'error');
+        } else {
+          setUserAlert('프록시를 비활성화했습니다.', 'info');
+        }
+        updateStatus(false);
+        requestDiag();
+      });
+    });
+  }
+}
+
+function toggleApplyButton(disabled) {
+  if (!els.applyBtn) return;
+  els.applyBtn.disabled = disabled;
+  els.applyBtn.textContent = disabled ? '적용 중...' : '설정 적용';
 }
 
 function collect() {
   return {
-    proxyHost: els.host.value.trim(),
-    proxyPort: els.port.value.trim(),
+    proxyHost: (els.host.value || '').trim(),
+    proxyPort: (els.port.value || '').trim(),
     proxyUsername: els.user.value,
     proxyPassword: els.pass.value,
   };
 }
 
 function updateStatus(enabled) {
+  if (!els.status) return;
   els.status.textContent = enabled ? '프록시 활성화' : '프록시 비활성화';
   els.status.classList.toggle('on', enabled);
   els.status.classList.toggle('off', !enabled);
+  if (statusOverride) {
+    applyStatusOverride();
+  } else {
+    els.status.classList.remove('err');
+  }
+  if (els.toggle) els.toggle.checked = enabled;
+  updateToggleText(enabled);
 }
 
-function maskCfg(cfg) {
-  const c = { ...cfg };
-  if (c.proxyPassword) {
-    const len = c.proxyPassword.length;
-    c.proxyPassword = len <= 2 ? '*'.repeat(len) : c.proxyPassword[0] + '*'.repeat(len - 2) + c.proxyPassword[len - 1];
+function setStatusError(text) {
+  if (!els.status) return;
+  statusOverride = { text: text || '프록시 오류', isError: true };
+  applyStatusOverride();
+}
+
+function applyStatusOverride() {
+  if (!statusOverride || !els.status) return;
+  els.status.textContent = statusOverride.text;
+  els.status.classList.add('err');
+}
+
+function clearStatusOverride() {
+  statusOverride = null;
+  if (els.status) els.status.classList.remove('err');
+}
+
+function updateToggleText(enabled) {
+  if (!els.toggleText) return;
+  els.toggleText.textContent = enabled ? '활성화됨' : '비활성화됨';
+}
+
+async function refreshIpInfo() {
+  if (!els.ipValue) return;
+  els.ipValue.textContent = '확인 중...';
+  if (els.refreshIp) els.refreshIp.disabled = true;
+
+  try {
+    const res = await fetch('https://api.myip.com', { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const ip = data?.ip || '';
+    els.ipValue.textContent = ip || '알 수 없음';
+
+    if (!ip) {
+      setIpAlert('IP 정보를 확인할 수 없습니다.', 'warn');
+    } else if (ip !== EXPECTED_IP) {
+      setIpAlert(`경고: 현재 IP(${ip})가 허용된 IP(${EXPECTED_IP})와 다릅니다.`, 'warn');
+    } else {
+      setIpAlert(null);
+    }
+  } catch (err) {
+    els.ipValue.textContent = '불러오기 실패';
+    setIpAlert(`IP 조회 실패: ${err.message || err}`, 'error');
+  } finally {
+    if (els.refreshIp) els.refreshIp.disabled = false;
   }
-  return c;
+}
+
+async function verifyProxyNow() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch('https://api.myip.com', { cache: 'no-store', signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) {
+      throw new Error(`IP 확인 실패(HTTP ${res.status})`);
+    }
+    const data = await res.json();
+    const ip = data?.ip || '';
+    if (!ip) throw new Error('IP 응답이 비었습니다.');
+    if (ip !== EXPECTED_IP) {
+      const msg = `프록시 연결 오류: 현재 IP(${ip}) ≠ 기대 IP(${EXPECTED_IP})`;
+      setUserAlert(msg, 'error');
+      setStatusError('프록시 오류');
+      notifyContentStatus(false, msg);
+      return false;
+    }
+    // success
+    clearStatusOverride();
+    updateStatus(true);
+    setUserAlert(`프록시 연결 확인: ${ip}`, 'info');
+    notifyContentStatus(true, `프록시 연결 확인: ${ip}`);
+    return true;
+  } catch (e) {
+    const msg = `프록시 연결 오류: ${e.message || e}`;
+    setUserAlert(msg, 'error');
+    setStatusError('프록시 오류');
+    notifyContentStatus(false, msg);
+    return false;
+  }
+}
+
+function notifyContentStatus(ok, message) {
+  try {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs && tabs[0];
+      if (!tab || !tab.id) return;
+      chrome.tabs.sendMessage(tab.id, { type: 'PROXY_STATUS', payload: { ok, message } }, () => {});
+    });
+  } catch {}
 }
 
 function requestDiag() {
@@ -106,15 +266,11 @@ function requestDiag() {
   });
 }
 
-function resetDiag() {
-  chrome.runtime.sendMessage({ type: 'RESET_PROXY_STATS' }, () => requestDiag());
-}
-
 function renderDiag(diag) {
-  // Update badge too
   updateStatus(Boolean(diag.enabled));
   const summary = [
     `상태: ${diag.pacMode === 'pac_script' ? '활성(PAC)' : '비활성(DIRECT)'}`,
+    `제어권: ${diag.levelOfControl || '-'}`,
     `엔드포인트: ${diag.host || '-'}${diag.port ? ':' + diag.port : ''}`,
     `적용시각: ${formatTs(diag.appliedAt)}`,
     `요청: 총 ${diag.sumRequests}건 · 성공 ${diag.sumOK}건 · 실패 ${diag.sumFailed}건`,
@@ -122,11 +278,61 @@ function renderDiag(diag) {
   ].join('\n');
   if (els.diagSummary) els.diagSummary.textContent = summary;
 
-  // Log render
   if (els.diagLog) {
     const logs = (diag.recent || []).slice().reverse();
     els.diagLog.innerHTML = logs.map(entry => renderLogLine(entry)).join('');
   }
+  if (statusOverride) {
+    applyStatusOverride();
+  }
+}
+
+function setAlert(source, message, level) {
+  if (!(source in alerts)) return;
+  if (!message) {
+    alerts[source] = null;
+  } else {
+    const lvl = level || 'info';
+    alerts[source] = { message, level: lvl };
+  }
+  renderAlerts();
+}
+
+function setUserAlert(message, level) {
+  setAlert('user', message, level);
+}
+
+function setIpAlert(message, level) {
+  setAlert('ip', message, level);
+}
+
+function renderAlerts() {
+  const banner = els.alertBanner;
+  const input = els.inputAlert;
+  if (!banner || !input) return;
+
+  banner.classList.remove('alert--error', 'alert--warn', 'alert--info');
+
+  const active = Object.values(alerts).filter(Boolean);
+  if (!active.length) {
+    banner.textContent = '';
+    input.textContent = '';
+    input.style.color = '';
+    return;
+  }
+
+  const highest = active.reduce((acc, cur) => {
+    if (!acc) return cur;
+    return ALERT_PRIORITY[cur.level] > ALERT_PRIORITY[acc.level] ? cur : acc;
+  }, null);
+
+  const messages = active.map(entry => entry.message).join('\n');
+  banner.textContent = messages;
+  const cls = ALERT_CLASS[highest.level] || 'alert--info';
+  banner.classList.add(cls);
+
+  input.textContent = messages;
+  input.style.color = INPUT_ALERT_COLOR[highest.level] || '#93c5fd';
 }
 
 function renderLogLine(e) {
@@ -155,4 +361,13 @@ function formatTs(ts) {
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[c]));
+}
+
+function maskCfg(cfg) {
+  const c = { ...cfg };
+  if (c.proxyPassword) {
+    const len = c.proxyPassword.length;
+    c.proxyPassword = len <= 2 ? '*'.repeat(len) : c.proxyPassword[0] + '*'.repeat(len - 2) + c.proxyPassword[len - 1];
+  }
+  return c;
 }

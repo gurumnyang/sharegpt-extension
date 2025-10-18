@@ -37,16 +37,17 @@
         padding: 12px 14px;
         background: transparent;
         display: flex;
-        align-items: center;
-        justify-content: space-between;
+        flex-direction: column;
+        gap: 6px;
         border-bottom: 1px solid var(--border);
       }
-      .title { font-weight: 700; }
+      .title { font-weight: 700; font-size: 16px; }
       .badge {
-        font-size: 12px; padding: 4px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted);
+        font-size: 12px; padding: 4px 8px; border-radius: 9999px; border: 1px solid var(--border); color: var(--muted); width: fit-content;
       }
       .badge.on { color: var(--primary); border-color: #2A6D5D; background: rgba(16,163,127,0.12); }
       .badge.off { color: var(--danger); border-color: #6b1f1f; background: rgba(239,68,68,0.12); }
+      .badge.err { color: #fca5a5; border-color: #7c2d2d; background: rgba(248,113,113,0.18); }
       .card__body { padding: 12px 14px 14px; }
       .row { display: flex; gap: 10px; margin-bottom: 10px; }
       .field { flex: 1; }
@@ -57,8 +58,54 @@
         outline: none; transition: border-color .15s ease, box-shadow .15s ease;
       }
       input:focus { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(96,165,250,.25); }
+      .control-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 14px 0 12px;
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+        color: var(--text);
+      }
+      .toggle input {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .toggle__track {
+        position: relative;
+        width: 46px;
+        height: 24px;
+        background: var(--border);
+        border-radius: 9999px;
+        transition: background 0.2s ease;
+      }
+      .toggle__thumb {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition: transform 0.2s ease, background 0.2s ease;
+      }
+      .toggle input:checked + .toggle__track {
+        background: rgba(16,163,127,0.25);
+      }
+      .toggle input:checked + .toggle__track .toggle__thumb {
+        transform: translateX(22px);
+        background: var(--primary);
+      }
       .actions { display: flex; gap: 8px; margin-top: 12px; }
-      button { flex: 1; padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); color: var(--text); background: var(--input); transition: transform .05s ease, background .2s ease, border-color .2s ease; }
+      .actions button { flex: 1; }
+      button { padding: 10px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--border); color: var(--text); background: var(--input); transition: transform .05s ease, background .2s ease, border-color .2s ease; }
       button:hover { background: #4b4d5a; border-color: #6a6c78; }
       button:active { transform: translateY(1px); }
       .btn--primary { background: var(--primary); border: none; color: #0b0e12; }
@@ -67,6 +114,49 @@
       .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
       .targets { font-size: 12px; color: var(--muted); margin-top: 8px; }
       .status { margin-top: 10px; }
+      .alert {
+        font-size: 12px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        margin-bottom: 12px;
+        display: none;
+        white-space: pre-line;
+      }
+      .alert--warn {
+        display: block;
+        color: #fcd34d;
+        background: rgba(250, 204, 21, 0.1);
+        border-color: rgba(250, 204, 21, 0.4);
+      }
+      .alert--error {
+        display: block;
+        color: #fca5a5;
+        background: rgba(248, 113, 113, 0.12);
+        border-color: rgba(248, 113, 113, 0.35);
+      }
+      .alert--info {
+        display: block;
+        color: #93c5fd;
+        background: rgba(96, 165, 250, 0.12);
+        border-color: rgba(96, 165, 250, 0.35);
+      }
+      .input-alert { font-size: 12px; color: #fcd34d; margin-bottom: 10px; min-height: 12px; }
+      .ip-info {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 6px;
+      }
+      .ip-label { color: var(--muted); }
+      .ip-value { color: var(--text); font-weight: 600; }
+      .ip-refresh {
+        font-size: 12px;
+        padding: 6px 10px;
+      }
     </style>
   </head>
   <body>
@@ -77,6 +167,15 @@
           <div id="status" class="badge off">프록시 비활성화</div>
         </div>
         <div class="card__body">
+          <div id="alertBanner" class="alert"></div>
+          <div class="ip-info">
+            <div>
+              <span class="ip-label">현재 IP</span>
+              <span class="ip-value" id="ipValue">확인 중...</span>
+            </div>
+            <button id="refreshIp" class="ip-refresh btn--ghost">새로고침</button>
+          </div>
+          <div id="inputAlert" class="input-alert"></div>
           <div class="row">
             <div class="field" style="flex:2">
               <label for="proxyHost">프록시 호스트</label>
@@ -99,13 +198,16 @@
             </div>
           </div>
 
-          <div class="actions">
-            <button id="saveBtn" class="btn--ghost">저장</button>
-            <button id="enableBtn" class="btn--primary">활성화</button>
-            <button id="disableBtn">비활성화</button>
+          <div class="control-row">
+            <label class="toggle">
+              <input id="proxyToggle" type="checkbox" />
+              <span class="toggle__track">
+                <span class="toggle__thumb"></span>
+              </span>
+              <span id="toggleText">비활성화됨</span>
+            </label>
+            <button id="applyBtn" class="btn--primary">설정 적용</button>
           </div>
-
-          <div class="targets">대상: chatgpt.com, chat.openai.com, www.myip.com</div>
 
           <div style="height:10px"></div>
           <div class="title" style="font-size:14px;margin-bottom:6px">진단</div>

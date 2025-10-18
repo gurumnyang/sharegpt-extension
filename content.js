@@ -14,6 +14,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("[Content] Refresh event received");
     changePlaceHolderMessage("로드 중...");
     sendResponse({ status: "success" });
+  } else if (message.type === "PROXY_STATUS") {
+    try {
+      const { ok, message: msg } = message.payload || {};
+      if (ok) {
+        changePlaceHolderMessage(`프록시 연결 확인됨`);
+      } else {
+        changePlaceHolderMessage(`[프록시 오류] ${msg || '연결 실패'}`);
+      }
+    } catch (e) {}
+    sendResponse({ status: "received" });
   }
 });
 

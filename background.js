@@ -5,7 +5,10 @@ const PROXY_TARGETS = [
   'chatgpt.com',
   'chat.openai.com',
   'www.myip.com',
+  'api.myip.com'
 ];
+
+const PROXY_SCOPES = ['regular', 'incognito_persistent', 'incognito_session_only'];
 
 // ===== Diagnostics state ===== //
 const MAX_LOG = 50;
@@ -15,6 +18,7 @@ const diag = {
   appliedAt: null,
   host: '',
   port: 0,
+  levelOfControl: '-',
   sumRequests: 0,
   sumOK: 0,
   sumFailed: 0,
@@ -26,6 +30,9 @@ const diag = {
 };
 
 const reqOutBytes = new Map(); // requestId -> bytes (approx)
+let forceReauthUntil = 0; // while active, force proxy re-auth by injecting headers
+let currentProxyCreds = { username: '', password: '' };
+let lastAuthScheme = '';
 
 function snapshotDiag() {
   return JSON.parse(JSON.stringify(diag));
@@ -57,15 +64,99 @@ function maskSecret(s) {
   return s[0] + '*'.repeat(Math.max(1, len - 2)) + s[len - 1];
 }
 
+function proxySettingsSet(details) {
+  return new Promise((resolve, reject) => {
+    chrome.proxy.settings.set(details, () => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        reject(new Error(err.message || String(err)));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function proxySettingsClear(scope = 'regular') {
+  return new Promise((resolve) => {
+    chrome.proxy.settings.clear({ scope }, () => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        console.warn('[Proxy] settings.clear warning:', err);
+      }
+      resolve();
+    });
+  });
+}
+
+function proxySettingsGet(details) {
+  return new Promise((resolve, reject) => {
+    chrome.proxy.settings.get(details, (res) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        reject(new Error(err.message || String(err)));
+      } else {
+        resolve(res);
+      }
+    });
+  });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function isIpHost(h) {
+  if (!h) return false;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(h)) return true; // IPv4
+  if (h.includes(':')) return true; // IPv6 (loose)
+  return false;
+}
+
+function withTrailingDot(h) {
+  if (!h) return h;
+  return h.endsWith('.') ? h : h + '.';
+}
+
+function stripTrailingDot(h) {
+  if (!h) return h;
+  return h.endsWith('.') ? h.slice(0, -1) : h;
+}
+
+const pendingTasks = new Map(); // messageId -> { resolve, reject }
+let messageSeq = 0;
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  const id = message?.__reqId || `req_${Date.now()}_${messageSeq++}`;
+  const wrapResponse = (payload) => {
+    pendingTasks.delete(id);
+    sendResponse(payload);
+  };
+
   if (message?.type === 'APPLY_PROXY') {
     console.log('[Proxy] APPLY_PROXY message received');
-    applyProxyFromStorage();
-    sendResponse({ ok: true });
+    pendingTasks.set(id, wrapResponse);
+    (async () => {
+      try {
+        await applyProxyFromStorage({ messageId: id });
+        wrapResponse({ ok: true });
+      } catch (err) {
+        console.error('[Proxy] APPLY_PROXY failed:', err);
+        wrapResponse({ ok: false, error: String(err) });
+      }
+    })();
+    return true;
   } else if (message?.type === 'DISABLE_PROXY') {
     console.log('[Proxy] DISABLE_PROXY message received');
-    clearProxy();
-    sendResponse({ ok: true });
+    pendingTasks.set(id, wrapResponse);
+    (async () => {
+      try {
+        await clearProxy({ level: 'info', msg: 'Proxy disabled via popup', messageId: id });
+        wrapResponse({ ok: true });
+      } catch (err) {
+        console.error('[Proxy] DISABLE_PROXY failed:', err);
+        wrapResponse({ ok: false, error: String(err) });
+      }
+    })();
+    return true;
   } else if (message?.type === 'GET_PROXY_STATUS') {
     sendResponse({ ok: true, data: snapshotDiag() });
   } else if (message?.type === 'RESET_PROXY_STATS') {
@@ -83,17 +174,40 @@ chrome.runtime.onStartup.addListener(() => {
 
 async function applyProxyFromStorage() {
   const cfg = await chrome.storage.local.get([
-    'proxyHost', 'proxyPort', 'proxyEnabled'
+    'proxyHost', 'proxyPort', 'proxyEnabled',
+    'proxyUsername', 'proxyPassword', 'lastProxyCredHash', 'proxyHostVariant'
   ]);
-  if (!cfg.proxyEnabled) return;
-  if (!cfg.proxyHost || !cfg.proxyPort) return;
+  if (!cfg.proxyEnabled) {
+    console.log('[Proxy] proxyEnabled is false; ensuring DIRECT mode');
+    await clearProxy({ level: 'info', msg: 'Proxy disabled; switched to DIRECT' });
+    return;
+  }
+  if (!cfg.proxyHost || !cfg.proxyPort) {
+    console.log('[Proxy] Incomplete proxy config in storage; enforcing DIRECT mode');
+    await clearProxy({ level: 'warn', msg: '프록시 설정 누락으로 DIRECT 모드 유지' });
+    return;
+  }
 
   const scheme = 'PROXY'; // HTTP 고정
   const host = cfg.proxyHost;
   const port = parseInt(cfg.proxyPort, 10) || 0;
-  if (!port) return;
+  if (!port) {
+    console.log('[Proxy] Invalid proxy port; enforcing DIRECT mode');
+    await clearProxy({ level: 'warn', msg: '유효하지 않은 포트로 DIRECT 모드 유지' });
+    return;
+  }
 
-  const pac = buildPacScript({ scheme, host, port, targets: PROXY_TARGETS });
+  const isIp = isIpHost(host);
+  const credHash = `${cfg.proxyUsername || ''}\n${cfg.proxyPassword || ''}`;
+  const hasCreds = Boolean((cfg.proxyUsername && cfg.proxyUsername.length) || (cfg.proxyPassword && cfg.proxyPassword.length));
+  let variant = cfg.proxyHostVariant || 'plain';
+  if (!isIp && hasCreds && credHash !== (cfg.lastProxyCredHash || '')) {
+    variant = variant === 'dot' ? 'plain' : 'dot';
+    await chrome.storage.local.set({ lastProxyCredHash: credHash, proxyHostVariant: variant });
+    pushLog({ level: 'info', msg: `Creds changed → switch PAC host variant to ${variant}` });
+  }
+  const pacHost = (!isIp && variant === 'dot') ? withTrailingDot(host) : host;
+  const pac = buildPacScript({ scheme, host: pacHost, port, targets: PROXY_TARGETS, stamp: Date.now(), allowDirectFallback: false });
 
   console.log('[Proxy] Applying PAC with config:', {
     enabled: cfg.proxyEnabled,
@@ -103,43 +217,114 @@ async function applyProxyFromStorage() {
   });
   console.log('[Proxy] PAC script:\n' + pac);
 
-  chrome.proxy.settings.set({
-    value: {
-      mode: 'pac_script',
-      pacScript: { data: pac }
-    },
-    scope: 'regular'
-  }, () => {
+  try {
+    // Best-effort: clear potential proxy cookies for domain hosts to avoid reusing prior session cookies
+    await clearProxyAuthCookies(host);
+    await applyPacToAllScopes(pac, 'final');
     console.log('[Proxy] PAC applied for targets:', PROXY_TARGETS.join(', '));
-    chrome.proxy.settings.get({ incognito: false }, (res) => {
-      try {
-        console.log('[Proxy] current setting mode:', res?.value?.mode);
-      } catch {}
-    });
+    try {
+      const res = await proxySettingsGet({ incognito: false });
+      console.log('[Proxy] current setting mode:', res?.value?.mode, 'levelOfControl:', res?.levelOfControl);
+      setDiag({ levelOfControl: res?.levelOfControl || '-' });
+      if (res?.levelOfControl && res.levelOfControl !== 'controllable_by_this_extension' && res.levelOfControl !== 'controlled_by_this_extension') {
+        pushLog({ level: 'warn', msg: `Proxy setting not controllable (${res.levelOfControl})` });
+      }
+    } catch (getErr) {
+      console.warn('[Proxy] Failed to read current proxy settings:', getErr);
+    }
     setDiag({ enabled: true, pacMode: 'pac_script', appliedAt: new Date().toISOString(), host, port }, { level: 'info', msg: 'PAC applied', host, port });
-  });
+  } catch (err) {
+    console.error('[Proxy] Failed to apply PAC:', err);
+    setDiag({ lastError: String(err) }, { level: 'error', msg: 'PAC apply failed', error: String(err) });
+    await clearProxy({ level: 'warn', msg: 'PAC 적용 실패로 DIRECT 모드 복귀', error: String(err) });
+  }
 }
 
-function clearProxy() {
-  chrome.proxy.settings.set({ value: { mode: 'direct' }, scope: 'regular' }, () => {
+async function applyPacToAllScopes(pacData, phase) {
+  for (const scope of PROXY_SCOPES) {
+    await proxySettingsClear(scope);
+    await sleep(50);
+    try {
+      await proxySettingsSet({ value: { mode: 'direct' }, scope });
+    } catch (directErr) {
+      if (scope === 'regular') throw directErr;
+      console.warn(`[Proxy] Failed to enforce DIRECT before PAC (${scope}, ${phase}):`, directErr);
+      continue;
+    }
+    await sleep(50);
+    try {
+      await proxySettingsSet({
+        value: {
+          mode: 'pac_script',
+          pacScript: { data: pacData }
+        },
+        scope
+      });
+    } catch (scopeErr) {
+      if (scope === 'regular') throw scopeErr;
+      console.warn(`[Proxy] PAC apply skipped for scope ${scope} (${phase}):`, scopeErr);
+    }
+  }
+}
+
+async function clearProxyAuthCookies(host) {
+  try {
+    if (isIpHost(host)) return;
+    const h1 = stripTrailingDot(host);
+    const h2 = withTrailingDot(host);
+    const origins = [
+      `http://${h1}`,
+      `https://${h1}`,
+      `http://${h2}`,
+      `https://${h2}`,
+    ];
+    await new Promise((resolve) => {
+      chrome.browsingData.remove({ origins, since: 0 }, { cookies: true }, () => resolve());
+    });
+    pushLog({ level: 'info', msg: 'Cleared proxy cookies', url: origins.join(',') });
+  } catch (e) {
+    console.warn('[Proxy] clearProxyAuthCookies failed:', e);
+  }
+}
+
+async function clearProxy(logEntry) {
+  const entry = logEntry || { level: 'info', msg: 'PAC cleared' };
+  try {
+    for (const scope of PROXY_SCOPES) {
+      await proxySettingsClear(scope);
+      try {
+        await proxySettingsSet({
+          value: { mode: 'direct' },
+          scope
+        });
+      } catch (scopeErr) {
+        if (scope === 'regular') throw scopeErr;
+        console.warn(`[Proxy] DIRECT apply skipped for scope ${scope}:`, scopeErr);
+      }
+    }
     console.log('[Proxy] Cleared (DIRECT).');
-    setDiag({ enabled: false, pacMode: 'direct', appliedAt: new Date().toISOString() }, { level: 'info', msg: 'PAC cleared' });
-  });
+    setDiag({ enabled: false, pacMode: 'direct', appliedAt: new Date().toISOString() }, entry);
+  } catch (err) {
+    console.error('[Proxy] Failed to clear proxy:', err);
+    setDiag({ lastError: String(err) }, { level: 'error', msg: 'Failed to clear proxy', error: String(err) });
+  }
 }
 
-function buildPacScript({ scheme, host, port, targets }) {
+function buildPacScript({ scheme, host, port, targets, stamp, allowDirectFallback }) {
   // HTTP(프로토콜) 고정 → PAC 토큰은 항상 PROXY
   let token = 'PROXY';
 
   const lines = [];
   lines.push('function FindProxyForURL(url, host) {');
+  if (stamp) lines.push(`  // stamp ${stamp}`);
   // helper: check subdomain or exact match
   lines.push('  function isMatch(h, d) {');
   lines.push('    return (h === d) || dnsDomainIs(h, "." + d);');
   lines.push('  }');
   // build condition
   const cond = targets.map(d => `isMatch(host, "${d}")`).join(' || ');
-  lines.push(`  if (${cond}) { return "${token} ${host}:${port}; DIRECT"; }`);
+  const route = allowDirectFallback ? `${token} ${host}:${port}; DIRECT` : `${token} ${host}:${port}`;
+  lines.push(`  if (${cond}) { return "${route}"; }`);
   lines.push('  return "DIRECT";');
   lines.push('}');
   return lines.join('\n');
@@ -175,6 +360,8 @@ chrome.webRequest.onAuthRequired.addListener(
 
         if (!shouldHandle) return;
 
+        lastAuthScheme = (scheme || '').toLowerCase();
+        currentProxyCreds = { username: cfg.proxyUsername, password: cfg.proxyPassword };
         console.log('[ProxyAuth] providing credentials for proxy', {
           username: cfg.proxyUsername,
           password: maskSecret(cfg.proxyPassword)
@@ -286,6 +473,7 @@ chrome.runtime.onInstalled.addListener(async () => {
     myAppId = storedAppId;
     console.log("[Extension] Loaded existing appId:", myAppId);
   }
+  await applyProxyFromStorage();
 });
 
 let lastTabId = null;
