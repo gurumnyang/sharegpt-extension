@@ -348,6 +348,9 @@ function sendMessage(text) {
  ****************************************************/
 (function init() {
   console.log("[Content] init() 실행");
-  createChatRoomUI();
-  initChatSocket();
+  // 채팅 UI는 더 이상 렌더하지 않지만, 레거시 코드는 보존
+  const legacyChatContainer = document.getElementById('chat-room-container');
+  if (legacyChatContainer) {
+    legacyChatContainer.remove();
+  }
 })();
