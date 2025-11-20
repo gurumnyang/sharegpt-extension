@@ -29,6 +29,8 @@ const diag = {
   recent: [],
 };
 
+const diagReady = hydrateDiagFromStorage();
+
 const reqOutBytes = new Map(); // requestId -> bytes (approx)
 let forceReauthUntil = 0; // while active, force proxy re-auth by injecting headers
 let currentProxyCreds = { username: '', password: '' };
@@ -62,6 +64,27 @@ function maskSecret(s) {
   const len = String(s).length;
   if (len <= 2) return '*'.repeat(len);
   return s[0] + '*'.repeat(Math.max(1, len - 2)) + s[len - 1];
+}
+
+async function hydrateDiagFromStorage() {
+  try {
+    const cfg = await chrome.storage.local.get(['proxyDiagnostics', 'proxyEnabled', 'proxyHost', 'proxyPort']);
+    const storedDiag = cfg.proxyDiagnostics;
+    if (storedDiag && typeof storedDiag === 'object') {
+      Object.assign(diag, storedDiag);
+      return;
+    }
+    if (cfg.proxyEnabled) {
+      Object.assign(diag, {
+        enabled: true,
+        pacMode: 'pac_script',
+        host: cfg.proxyHost || '',
+        port: parseInt(cfg.proxyPort, 10) || 0,
+      });
+    }
+  } catch (err) {
+    console.warn('[Proxy] Failed to hydrate diagnostics from storage:', err);
+  }
 }
 
 function proxySettingsSet(details) {
@@ -158,7 +181,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   } else if (message?.type === 'GET_PROXY_STATUS') {
-    sendResponse({ ok: true, data: snapshotDiag() });
+    diagReady
+      .catch(() => {}) // best-effort hydration
+      .finally(() => sendResponse({ ok: true, data: snapshotDiag() }));
+    return true;
   } else if (message?.type === 'RESET_PROXY_STATS') {
     diag.sumRequests = 0; diag.sumOK = 0; diag.sumFailed = 0; diag.sumBytesIn = 0; diag.sumBytesOut = 0; diag.recent = [];
     chrome.storage.local.set({ proxyDiagnostics: snapshotDiag() });
