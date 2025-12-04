@@ -223,16 +223,9 @@ async function applyProxyFromStorage() {
     return;
   }
 
-  const isIp = isIpHost(host);
-  const credHash = `${cfg.proxyUsername || ''}\n${cfg.proxyPassword || ''}`;
-  const hasCreds = Boolean((cfg.proxyUsername && cfg.proxyUsername.length) || (cfg.proxyPassword && cfg.proxyPassword.length));
-  let variant = cfg.proxyHostVariant || 'plain';
-  if (!isIp && hasCreds && credHash !== (cfg.lastProxyCredHash || '')) {
-    variant = variant === 'dot' ? 'plain' : 'dot';
-    await chrome.storage.local.set({ lastProxyCredHash: credHash, proxyHostVariant: variant });
-    pushLog({ level: 'info', msg: `Creds changed → switch PAC host variant to ${variant}` });
-  }
-  const pacHost = (!isIp && variant === 'dot') ? withTrailingDot(host) : host;
+  // Trailing-dot host variant was causing DNS failures on some platforms;
+  // keep PAC host strictly as provided.
+  const pacHost = host;
   const pac = buildPacScript({ scheme, host: pacHost, port, targets: PROXY_TARGETS, stamp: Date.now(), allowDirectFallback: false });
 
   console.log('[Proxy] Applying PAC with config:', {
@@ -410,13 +403,19 @@ chrome.webRequest.onAuthRequired.addListener(
 );
 
 function safeHost(url) {
-  try { return new URL(url).host.toLowerCase(); } catch { return ''; }
+  try {
+    const u = new URL(url);
+    // .hostname excludes port so matching works for CONNECT (e.g., chatgpt.com:443)
+    return u.hostname.toLowerCase();
+  } catch {
+    return '';
+  }
 }
 
 function hostMatches(host, domain) {
   if (!host || !domain) return false;
   const d = domain.toLowerCase();
-  const h = host.toLowerCase();
+  const h = host.toLowerCase().split(':')[0];
   return h === d || h.endsWith('.' + d);
 }
 
@@ -431,7 +430,7 @@ const targetUrlFilters = {
   urls: [
     '*://chatgpt.com/*', '*://*.chatgpt.com/*',
     '*://chat.openai.com/*',
-    '*://www.myip.com/*',
+    '*://www.myip.com/*', '*://api.myip.com/*',
   ]
 };
 
