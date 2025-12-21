@@ -1,6 +1,6 @@
 // popup.js
 
-const EXPECTED_IP = '211.108.115.121';
+const EXPECTED_IPS = ['211.108.115.121', '175.200.147.89'];
 const ALERT_PRIORITY = { error: 3, warn: 2, info: 1 };
 const ALERT_CLASS = { error: 'alert--error', warn: 'alert--warn', info: 'alert--info' };
 const INPUT_ALERT_COLOR = { error: '#fca5a5', warn: '#fcd34d', info: '#93c5fd' };
@@ -203,8 +203,8 @@ async function refreshIpInfo() {
 
     if (!ip) {
       setIpAlert('IP 정보를 확인할 수 없습니다.', 'warn');
-    } else if (ip !== EXPECTED_IP) {
-      setIpAlert(`경고: 현재 IP(${ip})가 허용된 IP(${EXPECTED_IP})와 다릅니다.`, 'warn');
+    } else if (!EXPECTED_IPS.includes(ip)) {
+      setIpAlert(`경고: 현재 IP(${ip})가 허용된 IP(${EXPECTED_IPS.join(', ')})와 다릅니다.`, 'warn');
     } else {
       setIpAlert(null);
     }
@@ -228,8 +228,8 @@ async function verifyProxyNow() {
     const data = await res.json();
     const ip = data?.ip || '';
     if (!ip) throw new Error('IP 응답이 비었습니다.');
-    if (ip !== EXPECTED_IP) {
-      const msg = `프록시 연결 오류: 현재 IP(${ip}) ≠ 기대 IP(${EXPECTED_IP})`;
+    if (!EXPECTED_IPS.includes(ip)) {
+      const msg = `프록시 연결 오류: 현재 IP(${ip}) ≠ 기대 IP(${EXPECTED_IPS.join(', ')})`;
       setUserAlert(msg, 'error');
       setStatusError('프록시 오류');
       notifyContentStatus(false, msg);
