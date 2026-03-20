@@ -1,6 +1,6 @@
 // popup.js
 
-const EXPECTED_IPS = ['211.108.115.121', '175.200.147.89'];
+const EXPECTED_IPS = ['211.108.115.121', '175.200.147.89', '119.195.74.230'];
 const ALERT_PRIORITY = { error: 3, warn: 2, info: 1 };
 const ALERT_CLASS = { error: 'alert--error', warn: 'alert--warn', info: 'alert--info' };
 const INPUT_ALERT_COLOR = { error: '#fca5a5', warn: '#fcd34d', info: '#93c5fd' };
